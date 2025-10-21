@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>像素鸟 - 道具优化版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        bird: '#f94d6a',
+                        birdDark: '#e53e5a',
+                        birdBeak: '#ffce52',
+                        pipe: '#2ecc71',
+                        pipeDark: '#27ae60',
+                        ground: '#8B4513',
+                        groundLight: '#A0522D',
+                        sky: '#4ecdc4',
+                        skyDark: '#3dbbba',
+                        shield: '#3b82f6',
+                        slow: '#8b5cf6',
+                        double: '#f59e0b'
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .game-container {
+                position: relative;
+                width: 100%;
+                max-width: 400px;
+                aspect-ratio: 3/4;
+                margin: 0 auto;
+            }
+            .pause-btn {
+                position: absolute;
+                top: 15px;
+                right: 15px;
+                width: 40px;
+                height: 40px;
+                z-index: 5;
+                cursor: pointer;
+                background-color: rgba(255, 255, 255, 0.8);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                transition: all 0.2s;
+            }
+            .pause-btn:hover {
+                transform: scale(1.1);
+                background-color: white;
+            }
+            .powerup-indicator {
+                position: absolute;
+                top: 15px;
+                left: 15px;
+                z-index: 5;
+                display: flex;
+                gap: 8px;
+            }
+            .powerup-icon {
+                width: 30px;
+                height: 30px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: white;
+                font-size: 14px;
+                opacity: 0.7;
+            }
+            .powerup-active {
+                opacity: 1;
+                box-shadow: 0 0 10px currentColor;
+                animation: pulse 1.5s infinite;
+            }
+            @keyframes pulse {
+                0%, 100% { transform: scale(1); }
+                50% { transform: scale(1.1); }
+            }
+            .difficulty-indicator {
+                position: absolute;
+                top: 15px;
+                left: 50%;
+                transform: translateX(-50%);
+                z-index: 5;
+                background-color: rgba(0,0,0,0.5);
+                color: white;
+                padding: 2px 8px;
+                border-radius: 10px;
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
+    <h1 class="text-3xl font-bold text-bird mb-4 text-center">像素鸟</h1>
+    
+    <div class="w-full max-w-md mb-3 flex justify-between">
+        <div class="bg-white px-3 py-2 rounded shadow">分数: <span id="score">0</span></div>
+        <div class="bg-white px-3 py-2 rounded shadow">最高分: <span id="highScore">0</span></div>
+    </div>
+    
+    <div class="game-container bg-sky rounded-lg shadow-lg overflow-hidden border-4 border-black">
+        <!-- 暂停按钮 -->
+        <div id="pauseBtn" class="pause-btn hidden">
+            <i class="fa fa-pause text-gray-800 text-xl"></i>
+        </div>
+        
+        <!-- 难度指示器 -->
+        <div class="difficulty-indicator hidden" id="difficultyIndicator">
+            难度: <span id="difficultyLevel">1</span>
+        </div>
+        
+        <!-- 道具状态指示器 -->
+        <div class="powerup-indicator hidden" id="powerupIndicators">
+            <div class="powerup-icon bg-shield" id="shieldIndicator">
+                <i class="fa fa-shield"></i>
+            </div>
+            <div class="powerup-icon bg-slow" id="slowIndicator">
+                <i class="fa fa-clock-o"></i>
+            </div>
+            <div class="powerup-icon bg-double" id="doubleIndicator">
+                <i class="fa fa-star"></i>
+            </div>
+        </div>
+        
+        <canvas id="gameCanvas" class="w-full h-full"></canvas>
+        
+        <!-- 开始界面 -->
+        <div id="startScreen" class="absolute inset-0 bg-black/60 flex flex-col items-center justify-center z-10">
+            <div class="text-white text-center mb-6">
+                <i class="fa fa-gamepad text-5xl mb-4 text-yellow-400"></i>
+                <h2 class="text-2xl font-bold">像素鸟</h2>
+            </div>
+            <p class="text-white mb-2">点击或按空格跳跃</p>
+            <p class="text-white mb-6">按P键暂停游戏<br>道具已优化，更容易收集</p>
+            <div class="grid grid-cols-3 gap-4 mb-6">
+                <div class="bg-shield/80 p-2 rounded flex items-center justify-center">
+                    <i class="fa fa-shield text-white mr-1"></i>
+                    <span class="text-white text-sm">护盾</span>
+                </div>
+                <div class="bg-slow/80 p-2 rounded flex items-center justify-center">
+                    <i class="fa fa-clock-o text-white mr-1"></i>
+                    <span class="text-white text-sm">慢速</span>
+                </div>
+                <div class="bg-double/80 p-2 rounded flex items-center justify-center">
+                    <i class="fa fa-star text-white mr-1"></i>
+                    <span class="text-white text-sm">双倍分</span>
+                </div>
+            </div>
+            <button id="startBtn" class="bg-bird text-white px-6 py-3 rounded-lg font-bold hover:bg-red-500 transition">
+                开始游戏
+            </button>
+        </div>
+        
+        <!-- 暂停界面 -->
+        <div id="pauseScreen" class="absolute inset-0 bg-black/60 flex flex-col items-center justify-center z-10 hidden">
+            <h2 class="text-2xl font-bold text-white mb-6">游戏暂停</h2>
+            <button id="resumeBtn" class="bg-green-500 text-white px-6 py-3 rounded-lg font-bold hover:bg-green-600 transition mb-3">
+                继续游戏
+            </button>
+            <button id="restartFromPauseBtn" class="bg-bird text-white px-6 py-3 rounded-lg font-bold hover:bg-red-500 transition">
+                重新开始
+            </button>
+        </div>
+        
+        <!-- 结束界面 -->
+        <div id="endScreen" class="absolute inset-0 bg-black/60 flex flex-col items-center justify-center z-10 hidden">
+            <h2 class="text-2xl font-bold text-white mb-2">游戏结束</h2>
+            <p class="text-white mb-2">你的分数: <span id="finalScore">0</span></p>
+            <p class="text-white mb-6">最高分: <span id="endHighScore">0</span></p>
+            <button id="restartBtn" class="bg-green-500 text-white px-6 py-3 rounded-lg font-bold hover:bg-green-600 transition">
+                再来一次
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // 获取元素
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const startScreen = document.getElementById('startScreen');
+        const pauseScreen = document.getElementById('pauseScreen');
+        const endScreen = document.getElementById('endScreen');
+        const startBtn = document.getElementById('startBtn');
+        const restartBtn = document.getElementById('restartBtn');
+        const resumeBtn = document.getElementById('resumeBtn');
+        const restartFromPauseBtn = document.getElementById('restartFromPauseBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const scoreElement = document.getElementById('score');
+        const highScoreElement = document.getElementById('highScore');
+        const finalScoreElement = document.getElementById('finalScore');
+        const endHighScoreElement = document.getElementById('endHighScore');
+        const powerupIndicators = document.getElementById('powerupIndicators');
+        const shieldIndicator = document.getElementById('shieldIndicator');
+        const slowIndicator = document.getElementById('slowIndicator');
+        const doubleIndicator = document.getElementById('doubleIndicator');
+        const difficultyIndicator = document.getElementById('difficultyIndicator');
+        const difficultyLevel = document.getElementById('difficultyLevel');
+        
+        // 设置画布尺寸
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+        }
+        
+        // 初始化画布尺寸
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        
+        // 游戏变量
+        let bird = {
+            x: 50,
+            y: 150,
+            width: 34,
+            height: 24,
+            velocity: 0,
+            gravity: 0.45,
+            jump: -8.5,
+            wingFrame: 0,
+            wingSpeed: 0.2,
+            hasShield: false
+        };
+        
+        let pipes = [];
+        let powerups = [];
+        let pipeWidth = 60;
+        let basePipeGap = 160;
+        let currentPipeGap = 160;
+        let basePipeSpeed = 1.8;
+        let currentPipeSpeed = 1.8;
+        let score = 0;
+        let highScore = localStorage.getItem('flappyHighScore') || 0;
+        let difficulty = 1;
+        let isPlaying = false;
+        let isPaused = false;
+        let lastPipeTime = 0;
+        let lastPowerupTime = 0;
+        let powerupSpawnRate = 6000; // 缩短道具生成间隔
+        let animationId;
+        let lastTimestamp = 0;
+        
+        // 道具效果状态
+        let powerupStates = {
+            slow: { active: false, endTime: 0, duration: 8000 },
+            doubleScore: { active: false, endTime: 0, duration: 6000 }
+        };
+        
+        // 更新高分显示
+        highScoreElement.textContent = highScore;
+        endHighScoreElement.textContent = highScore;
+        
+        // 绘制小鸟
+        function drawBird() {
+            if (bird.hasShield) {
+                ctx.strokeStyle = '#3b82f6';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([5, 3]);
+                ctx.beginPath();
+                ctx.arc(
+                    bird.x + bird.width / 2, 
+                    bird.y + bird.height / 2, 
+                    bird.width / 2 + 10, 
+                    0, Math.PI * 2
+                );
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+            
+            // 身体主体
+            ctx.fillStyle = bird.y > canvas.height / 2 ? '#f87171' : '#f94d6a';
+            ctx.beginPath();
+            ctx.ellipse(
+                bird.x + bird.width / 2, 
+                bird.y + bird.height / 2, 
+                bird.width / 2, 
+                bird.height / 2, 
+                0, 0, Math.PI * 2
+            );
+            ctx.fill();
+            
+            // 背部阴影
+            ctx.fillStyle = '#e53e5a';
+            ctx.beginPath();
+            ctx.ellipse(
+                bird.x + bird.width / 2, 
+                bird.y + bird.height / 3, 
+                bird.width / 2.5, 
+                bird.height / 3, 
+                0, 0, Math.PI * 2
+            );
+            ctx.fill();
+            
+            // 翅膀动画
+            ctx.fillStyle = '#e53e5a';
+            const wingAngle = Math.sin(bird.wingFrame) * 0.5;
+            ctx.save();
+            ctx.translate(bird.x + 10, bird.y + 12);
+            ctx.rotate(wingAngle);
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 12, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+            
+            // 眼睛
+            const lookOffset = Math.max(-3, Math.min(3, bird.velocity * 0.3));
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(bird.x + bird.width - 10, bird.y + 8, 5, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // 瞳孔
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.arc(bird.x + bird.width - 10 + lookOffset, bird.y + 8, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // 嘴巴
+            ctx.fillStyle = '#ffce52';
+            ctx.beginPath();
+            ctx.moveTo(bird.x + bird.width - 5, bird.y + 10);
+            ctx.lineTo(bird.x + bird.width + 6, bird.y + 12);
+            ctx.lineTo(bird.x + bird.width - 5, bird.y + 14);
+            ctx.fill();
+            
+            // 脚
+            ctx.fillStyle = '#ffce52';
+            ctx.beginPath();
+            ctx.moveTo(bird.x + 5, bird.y + bird.height);
+            ctx.lineTo(bird.x + 2, bird.y + bird.height + 6);
+            ctx.lineTo(bird.x + 8, bird.y + bird.height + 4);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.moveTo(bird.x + 15, bird.y + bird.height);
+            ctx.lineTo(bird.x + 12, bird.y + bird.height + 6);
+            ctx.lineTo(bird.x + 18, bird.y + bird.height + 4);
+            ctx.fill();
+            
+            bird.wingFrame += bird.wingSpeed;
+        }
+        
+        // 绘制管道
+        function drawPipes() {
+            pipes.forEach(pipe => {
+                // 上管道
+                ctx.fillStyle = '#2ecc71';
+                ctx.fillRect(pipe.x, 0, pipeWidth, pipe.top);
+                
+                // 上管道顶部
+                ctx.fillStyle = '#27ae60';
+                ctx.fillRect(pipe.x - 5, pipe.top - 15, pipeWidth + 10, 15);
+                
+                // 上管道装饰
+                ctx.fillStyle = '#219653';
+                for (let i = 0; i < 3; i++) {
+                    ctx.fillRect(
+                        pipe.x + 10 + i * 15, 
+                        pipe.top - 30, 
+                        10, 
+                        20
+                    );
+                }
+                
+                // 下管道
+                ctx.fillStyle = '#2ecc71';
+                ctx.fillRect(pipe.x, canvas.height - pipe.bottom, pipeWidth, pipe.bottom);
+                
+                // 下管道顶部
+                ctx.fillStyle = '#27ae60';
+                ctx.fillRect(pipe.x - 5, canvas.height - pipe.bottom, pipeWidth + 10, 15);
+                
+                // 下管道装饰
+                ctx.fillStyle = '#219653';
+                for (let i = 0; i < 3; i++) {
+                    ctx.fillRect(
+                        pipe.x + 10 + i * 15, 
+                        canvas.height - pipe.bottom + 10, 
+                        10, 
+                        20
+                    );
+                }
+            });
+        }
+        
+        // 绘制道具（增大尺寸，更容易被看到）
+        function drawPowerups() {
+            powerups.forEach(powerup => {
+                // 道具发光效果（增强可见性）
+                ctx.shadowColor = powerup.color;
+                ctx.shadowBlur = 20;
+                
+                // 道具背景
+                ctx.fillStyle = powerup.color;
+                ctx.beginPath();
+                ctx.arc(powerup.x, powerup.y, powerup.size, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // 道具图标
+                ctx.fillStyle = 'white';
+                switch(powerup.type) {
+                    case 'shield':
+                        ctx.beginPath();
+                        ctx.moveTo(powerup.x, powerup.y - 6);
+                        ctx.lineTo(powerup.x + 6, powerup.y + 4);
+                        ctx.lineTo(powerup.x - 6, powerup.y + 4);
+                        ctx.closePath();
+                        ctx.fill();
+                        break;
+                    case 'slow':
+                        ctx.beginPath();
+                        ctx.arc(powerup.x, powerup.y, 5, 0, Math.PI * 2, false);
+                        ctx.fill();
+                        ctx.fillStyle = powerup.color;
+                        ctx.beginPath();
+                        ctx.arc(powerup.x, powerup.y, 2.5, 0, Math.PI * 2, false);
+                        ctx.fill();
+                        break;
+                    case 'double':
+                        ctx.beginPath();
+                        ctx.moveTo(powerup.x, powerup.y - 5);
+                        ctx.lineTo(powerup.x + 3, powerup.y + 4);
+                        ctx.lineTo(powerup.x - 5, powerup.y - 1);
+                        ctx.lineTo(powerup.x + 5, powerup.y - 1);
+                        ctx.lineTo(powerup.x - 3, powerup.y + 4);
+                        ctx.closePath();
+                        ctx.fill();
+                        break;
+                }
+                
+                ctx.shadowBlur = 0;
+            });
+        }
+        
+        // 绘制地面
+        function drawGround() {
+            // 地面
+            ctx.fillStyle = '#8B4513';
+            ctx.fillRect(0, canvas.height - 50, canvas.width, 50);
+            
+            // 地面纹理
+            ctx.fillStyle = '#A0522D';
+            for (let i = 0; i < canvas.width; i += 40) {
+                ctx.fillRect(i, canvas.height - 35, 20, 35);
+            }
+            
+            // 远处的草地
+            ctx.fillStyle = '#4ade80';
+            ctx.fillRect(0, canvas.height - 55, canvas.width, 5);
+        }
+        
+        // 绘制背景
+        function drawBackground() {
+            // 渐变天空
+            const skyGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            skyGradient.addColorStop(0, '#4ecdc4');
+            skyGradient.addColorStop(1, '#3dbbba');
+            ctx.fillStyle = skyGradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // 太阳
+            ctx.fillStyle = '#facc15';
+            ctx.beginPath();
+            ctx.arc(canvas.width - 60, 60, 30, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // 云
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            [
+                {x: 50 + (Date.now() / 30000) % 300, y: 60, size: 1},
+                {x: 200 + (Date.now() / 40000) % 400, y: 100, size: 0.8},
+                {x: 300 + (Date.now() / 35000) % 350, y: 40, size: 1.2}
+            ].forEach(cloud => {
+                const s = cloud.size;
+                ctx.beginPath();
+                ctx.arc(cloud.x, cloud.y, 15 * s, 0, Math.PI * 2);
+                ctx.arc(cloud.x + 20 * s, cloud.y - 10 * s, 15 * s, 0, Math.PI * 2);
+                ctx.arc(cloud.x + 40 * s, cloud.y, 15 * s, 0, Math.PI * 2);
+                ctx.fillRect(cloud.x - 5 * s, cloud.y, 50 * s, 10 * s);
+                ctx.fill();
+            });
+        }
+        
+        // 更新道具状态指示器
+        function updatePowerupIndicators() {
+            shieldIndicator.classList.toggle('powerup-active', bird.hasShield);
+            slowIndicator.classList.toggle('powerup-active', powerupStates.slow.active);
+            doubleIndicator.classList.toggle('powerup-active', powerupStates.doubleScore.active);
+        }
+        
+        // 检查并更新道具效果
+        function updatePowerupEffects(timestamp) {
+            if (powerupStates.slow.active && timestamp > powerupStates.slow.endTime) {
+                powerupStates.slow.active = false;
+                currentPipeSpeed = basePipeSpeed;
+            }
+            
+            if (powerupStates.doubleScore.active && timestamp > powerupStates.doubleScore.endTime) {
+                powerupStates.doubleScore.active = false;
+            }
+            
+            updatePowerupIndicators();
+        }
+        
+        // 更新小鸟位置
+        function updateBird(deltaTime) {
+            bird.velocity += bird.gravity * (deltaTime / 16);
+            bird.y += bird.velocity * (deltaTime / 16);
+            
+            if (bird.velocity > 15) bird.velocity = 15;
+            
+            // 碰撞检测 - 地面和顶部
+            if (bird.y + bird.height > canvas.height - 50 || bird.y < 0) {
+                if (bird.hasShield) {
+                    bird.hasShield = false;
+                    bird.velocity = -5;
+                    if (bird.y + bird.height > canvas.height - 50) {
+                        bird.y = canvas.height - 50 - bird.height - 1;
+                    } else {
+                        bird.y = 1;
+                    }
+                } else {
+                    endGame();
+                }
+            }
+        }
+        
+        // 创建管道
+        function createPipe() {
+            const minHeight = 50;
+            const maxHeight = canvas.height - currentPipeGap - 100;
+            const topHeight = minHeight + Math.random() * (maxHeight - minHeight);
+            
+            pipes.push({
+                x: canvas.width,
+                top: topHeight,
+                bottom: canvas.height - topHeight - currentPipeGap - 50,
+                passed: false,
+                // 记录管道位置范围，用于道具生成判断
+                gapStart: topHeight,
+                gapEnd: topHeight + currentPipeGap
+            });
+        }
+        
+        // 检查道具是否与管道重叠
+        function isPowerupOverlappingPipe(xPos, yPos) {
+            const buffer = 20; // 额外缓冲距离，确保不靠近管道
+            return pipes.some(pipe => {
+                // 检查x轴是否在管道范围内
+                const xOverlap = xPos > pipe.x - pipeWidth - buffer && 
+                                xPos < pipe.x + pipeWidth + buffer;
+                
+                // 检查y轴是否在管道或管道间隙附近
+                const yOverlap = yPos < pipe.gapStart + buffer || 
+                                yPos > pipe.gapEnd - buffer;
+                
+                return xOverlap && yOverlap;
+            });
+        }
+        
+        // 创建道具（优化生成逻辑，避免与管道重合）
+        function createPowerup() {
+            // 随机道具类型
+            const types = [
+                {type: 'shield', color: '#3b82f6', size: 22}, // 增大尺寸
+                {type: 'slow', color: '#8b5cf6', size: 22},
+                {type: 'double', color: '#f59e0b', size: 22}
+            ];
+            
+            const powerupType = types[Math.floor(Math.random() * types.length)];
+            
+            let yPos;
+            let attempts = 0;
+            const maxAttempts = 10; // 最多尝试10次找到合适位置
+            
+            // 确保道具生成在安全位置（不与管道重叠）
+            do {
+                // 生成可能的y位置
+                yPos = 80 + Math.random() * (canvas.height - 210);
+                attempts++;
+            } while (isPowerupOverlappingPipe(canvas.width + 50, yPos) && attempts < maxAttempts);
+            
+            // 添加轻微上下浮动效果，更容易被注意到
+            powerups.push({
+                x: canvas.width + 50,
+                y: yPos,
+                baseY: yPos, // 基础Y位置
+                floatOffset: 0, // 浮动偏移量
+                floatSpeed: 0.03 + Math.random() * 0.04, // 浮动速度
+                ...powerupType,
+                speed: currentPipeSpeed
+            });
+        }
+        
+        // 检测道具碰撞并应用效果
+        function checkPowerupCollision() {
+            for (let i = powerups.length - 1; i >= 0; i--) {
+                const powerup = powerups[i];
+                const dx = bird.x + bird.width/2 - powerup.x;
+                const dy = bird.y + bird.height/2 - powerup.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // 增大碰撞检测范围，更容易收集
+                if (distance < bird.width/2 + powerup.size + 5) {
+                    const timestamp = performance.now();
+                    switch(powerup.type) {
+                        case 'shield':
+                            bird.hasShield = true;
+                            break;
+                        case 'slow':
+                            powerupStates.slow.active = true;
+                            powerupStates.slow.endTime = timestamp + powerupStates.slow.duration;
+                            currentPipeSpeed = basePipeSpeed * 0.7;
+                            break;
+                        case 'double':
+                            powerupStates.doubleScore.active = true;
+                            powerupStates.doubleScore.endTime = timestamp + powerupStates.doubleScore.duration;
+                            break;
+                    }
+                    
+                    // 道具收集特效（闪烁消失）
+                    powerups.splice(i, 1);
+                    updatePowerupIndicators();
+                }
+            }
+        }
+        
+        // 检查是否需要提升难度
+        function checkDifficultyIncrease() {
+            if (score < 50) return false;
+            
+            const newDifficulty = 1 + Math.floor((score - 50) / 20);
+            
+            if (newDifficulty > difficulty) {
+                difficulty = newDifficulty;
+                difficultyLevel.textContent = difficulty;
+                
+                basePipeSpeed += 0.3;
+                currentPipeGap = Math.max(120, basePipeGap - 8);
+                
+                if (!powerupStates.slow.active) {
+                    currentPipeSpeed = basePipeSpeed;
+                }
+                
+                return true;
+            }
+            
+            return false;
+        }
+        
+        // 更新管道和道具
+        function updateObjects(timestamp, deltaTime) {
+            // 定期生成新管道
+            if (timestamp - lastPipeTime > 1600) {
+                createPipe();
+                lastPipeTime = timestamp;
+            }
+            
+            // 更频繁地生成道具，提高获取几率
+            if (timestamp - lastPowerupTime > powerupSpawnRate) {
+                createPowerup();
+                lastPowerupTime = timestamp;
+                powerupSpawnRate = 5000 + Math.random() * 4000; // 5-9秒生成一次
+            }
+            
+            // 移动管道并检测碰撞
+            for (let i = pipes.length - 1; i >= 0; i--) {
+                const pipe = pipes[i];
+                pipe.x -= currentPipeSpeed * (deltaTime / 16);
+                
+                if (pipe.x + pipeWidth < 0) {
+                    pipes.splice(i, 1);
+                }
+                
+                // 碰撞检测
+                if (
+                    bird.x + bird.width > pipe.x &&
+                    bird.x < pipe.x + pipeWidth &&
+                    (bird.y < pipe.top || bird.y + bird.height > canvas.height - pipe.bottom)
+                ) {
+                    if (bird.hasShield) {
+                        bird.hasShield = false;
+                        pipes.splice(i, 1);
+                    } else {
+                        endGame();
+                        return;
+                    }
+                }
+                
+                // 计分
+                if (!pipe.passed && pipe.x + pipeWidth < bird.x) {
+                    pipe.passed = true;
+                    const points = powerupStates.doubleScore.active ? 2 : 1;
+                    score += points;
+                    scoreElement.textContent = score;
+                    
+                    checkDifficultyIncrease();
+                }
+            }
+            
+            // 移动道具并应用浮动效果
+            for (let i = powerups.length - 1; i >= 0; i--) {
+                const powerup = powerups[i];
+                powerup.x -= currentPipeSpeed * (deltaTime / 16);
+                
+                // 上下浮动动画，更容易被发现
+                powerup.floatOffset += powerup.floatSpeed;
+                powerup.y = powerup.baseY + Math.sin(powerup.floatOffset) * 8;
+                
+                if (powerup.x + powerup.size < 0) {
+                    powerups.splice(i, 1);
+                }
+            }
+            
+            checkPowerupCollision();
+        }
+        
+        // 游戏主循环
+        function gameLoop(timestamp) {
+            if (!isPlaying || isPaused) return;
+            
+            const deltaTime = lastTimestamp ? timestamp - lastTimestamp : 16;
+            lastTimestamp = timestamp;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            drawBackground();
+            drawPipes();
+            drawPowerups();
+            drawGround();
+            updateBird(deltaTime);
+            drawBird();
+            updateObjects(timestamp, deltaTime);
+            updatePowerupEffects(timestamp);
+            
+            animationId = requestAnimationFrame(gameLoop);
+        }
+        
+        // 开始游戏
+        function startGame() {
+            bird = {
+                x: 50,
+                y: 150,
+                width: 34,
+                height: 24,
+                velocity: 0,
+                gravity: 0.45,
+                jump: -8.5,
+                wingFrame: 0,
+                wingSpeed: 0.2,
+                hasShield: false
+            };
+            
+            pipes = [];
+            powerups = [];
+            score = 0;
+            difficulty = 1;
+            basePipeSpeed = 1.8;
+            currentPipeSpeed = 1.8;
+            basePipeGap = 160;
+            currentPipeGap = 160;
+            isPaused = false;
+            
+            powerupStates = {
+                slow: { active: false, endTime: 0, duration: 8000 },
+                doubleScore: { active: false, endTime: 0, duration: 6000 }
+            };
+            
+            scoreElement.textContent = '0';
+            difficultyLevel.textContent = difficulty;
+            
+            startScreen.classList.add('hidden');
+            pauseScreen.classList.add('hidden');
+            endScreen.classList.add('hidden');
+            pauseBtn.classList.remove('hidden');
+            powerupIndicators.classList.remove('hidden');
+            difficultyIndicator.classList.remove('hidden');
+            
+            updatePowerupIndicators();
+            
+            isPlaying = true;
+            lastPipeTime = performance.now();
+            lastPowerupTime = performance.now();
+            lastTimestamp = 0;
+            animationId = requestAnimationFrame(gameLoop);
+        }
+        
+        // 结束游戏
+        function endGame() {
+            isPlaying = false;
+            cancelAnimationFrame(animationId);
+            pauseBtn.classList.add('hidden');
+            powerupIndicators.classList.add('hidden');
+            difficultyIndicator.classList.add('hidden');
+            
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('flappyHighScore', highScore);
+                highScoreElement.textContent = highScore;
+                endHighScoreElement.textContent = highScore;
+            }
+            
+            finalScoreElement.textContent = score;
+            endScreen.classList.remove('hidden');
+        }
+        
+        // 暂停游戏
+        function pauseGame() {
+            if (!isPlaying || isPaused) return;
+            
+            isPaused = true;
+            cancelAnimationFrame(animationId);
+            pauseScreen.classList.remove('hidden');
+        }
+        
+        // 恢复游戏
+        function resumeGame() {
+            if (!isPlaying || !isPaused) return;
+            
+            isPaused = false;
+            pauseScreen.classList.add('hidden');
+            lastTimestamp = 0;
+            animationId = requestAnimationFrame(gameLoop);
+        }
+        
+        // 小鸟跳跃
+        function birdJump() {
+            if (isPlaying && !isPaused) {
+                bird.velocity = bird.jump;
+                bird.wingFrame += 1;
+            }
+        }
+        
+        // 事件监听
+        startBtn.addEventListener('click', startGame);
+        restartBtn.addEventListener('click', startGame);
+        restartFromPauseBtn.addEventListener('click', startGame);
+        resumeBtn.addEventListener('click', resumeGame);
+        pauseBtn.addEventListener('click', pauseGame);
+        
+        canvas.addEventListener('click', (e) => {
+            if (e.target === canvas) {
+                if (isPlaying && !isPaused) {
+                    birdJump();
+                } else if (!startScreen.classList.contains('hidden') || !endScreen.classList.contains('hidden')) {
+                    startGame();
+                }
+            }
+        });
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                if (isPlaying && !isPaused) {
+                    birdJump();
+                } else if (!startScreen.classList.contains('hidden') || !endScreen.classList.contains('hidden')) {
+                    startGame();
+                }
+            }
+            
+            if (e.code === 'KeyP') {
+                e.preventDefault();
+                if (isPlaying) {
+                    if (isPaused) {
+                        resumeGame();
+                    } else {
+                        pauseGame();
+                    }
+                }
+            }
+        });
+        
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (e.target === canvas) {
+                if (isPlaying && !isPaused) {
+                    birdJump();
+                } else if (!startScreen.classList.contains('hidden') || !endScreen.classList.contains('hidden')) {
+                    startGame();
+                }
+            }
+        }, { passive: false });
+    </script>
+</body>
+</html>
